@@ -3,8 +3,6 @@
 ################################################################################################################################
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from langchain.chains.retrieval_qa.base import RetrievalQA
-import time
-import tiktoken
 import streamlit as st
 
 from utils import *
@@ -32,7 +30,7 @@ embeddings_model = st.secrets["AZURE_OPENAI_ADA_EMBEDDING_MODEL_NAME"]
 azure_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
 azure_deployment = st.secrets["AZURE_OPENAI_DEPLOYMENT"]
 azure_model = st.secrets["AZURE_OPENAI_MODEL"]
-azure_api_version = "2024-02-15-preview"  # st.secrets["AZURE_OPENAI_API_VERSION"]
+azure_api_version = st.secrets["AZURE_OPENAI_API_VERSION"]
 azure_key = st.secrets["AZURE_OPENAI_API_KEY"]
 
 vectorstore_address = st.secrets["AZURESEARCH_VECTORSTORE_ADDRESS"]
