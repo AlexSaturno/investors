@@ -33,36 +33,40 @@ azure_model = st.secrets["AZURE_OPENAI_MODEL"]
 azure_api_version = st.secrets["AZURE_OPENAI_API_VERSION"]
 azure_key = st.secrets["AZURE_OPENAI_API_KEY"]
 
-vectorstore_address = st.secrets["AZURESEARCH_VECTORSTORE_ADDRESS"]
-vectorstore_key = st.secrets["AZURESEARCH_VECTORSTORE_KEY"]
+vectorstore_address = st.secrets["INVESTORS_AZURESEARCH_VECTORSTORE_ADDRESS"]
+vectorstore_key = st.secrets["INVESTORS_AZURESEARCH_VECTORSTORE_KEY"]
 
+INVESTORS_AZURESEARCH_FIELDS_CHUNK_ID = "chunk_id"
+INVESTORS_AZURESEARCH_FIELDS_PARENT_ID = "parent_id"
+INVESTORS_AZURESEARCH_FIELDS_CHUNK = "chunk"
+INVESTORS_AZURESEARCH_FIELDS_TITLE = "title"
+INVESTORS_AZURESEARCH_FIELDS_TEXT_VECTOR = "text_vector"
 
-AZURESEARCH_FIELDS_ID = st.secrets["AZURESEARCH_FIELDS_ID"]
-AZURESEARCH_FIELDS_CONTENT = st.secrets["AZURESEARCH_FIELDS_CONTENT"]
-AZURESEARCH_FIELDS_CONTENT_VECTOR = st.secrets["AZURESEARCH_FIELDS_CONTENT_VECTOR"]
+AZURESEARCH_FIELDS_CHUNK_ID = st.secrets["INVESTORS_AZURESEARCH_FIELDS_CHUNK_ID"]
+AZURESEARCH_FIELDS_PARENT_ID = st.secrets["INVESTORS_AZURESEARCH_FIELDS_PARENT_ID"]
+AZURESEARCH_FIELDS_CHUNK = st.secrets["INVESTORS_AZURESEARCH_FIELDS_CHUNK"]
+AZURESEARCH_FIELDS_TITLE = st.secrets["INVESTORS_AZURESEARCH_FIELDS_TITLE"]
+AZURESEARCH_FIELDS_TEXT_VECTOR = st.secrets["INVESTORS_AZURESEARCH_FIELDS_TEXT_VECTOR"]
 
 fields = [
     SimpleField(
-        name=AZURESEARCH_FIELDS_ID,
+        name=AZURESEARCH_FIELDS_CHUNK_ID,
         type=SearchFieldDataType.String,
         key=True,
         filterable=True,
     ),
-    SearchableField(
-        name=AZURESEARCH_FIELDS_CONTENT,
-        type=SearchFieldDataType.String,
-        searchable=True,
-    ),
+    SimpleField(name=AZURESEARCH_FIELDS_PARENT_ID, type=SearchFieldDataType.String),
+    SimpleField(name=AZURESEARCH_FIELDS_CHUNK, type=SearchFieldDataType.String),
+    SimpleField(name=AZURESEARCH_FIELDS_TITLE, type=SearchFieldDataType.String),
     SearchField(
-        name=AZURESEARCH_FIELDS_CONTENT_VECTOR,
+        name=AZURESEARCH_FIELDS_TEXT_VECTOR,
         type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
         searchable=True,
-        vector_search_dimensions=1536,
+        vector_search_dimensions=3072,
     ),
 ]
 #############################################################################################################
-# Parametros das APIS
-# arquivo de secrets
+# Parâmetros das APIs
 embeddings = AzureOpenAIEmbeddings(
     azure_deployment=embeddings_deployment,
     model=embeddings_model,
@@ -83,13 +87,13 @@ llm = AzureChatOpenAI(
 vector_store: AzureSearch = AzureSearch(
     azure_search_endpoint=vectorstore_address,
     azure_search_key=vectorstore_key,
-    index_name=st.secrets["AZURESEARCH_INDEX_NAME"],
+    index_name=st.secrets["INVESTORS_AZURESEARCH_INDEX_NAME"],
     embedding_function=embeddings.embed_query,
     fields=fields,
 )
 
 #############################################################################################################
-# Chat functions
+# Funções do Chat
 PROMPT = """
 You are an investors assistant. The reply must be always in Portuguese from Brazil.
 Answers must be based on the vectorized database.
@@ -105,11 +109,23 @@ Human: {question}
 
 
 def cria_chain_conversa():
-    memory = ConversationBufferMemory(
-        return_messages=True, memory_key="chat_history", output_key="answer"
-    )
+    # Defina chaves únicas para a memória e a cadeia desta página
+    memory_key = "memory_investors"
+    chain_key = "chain_investors"
+
+    # Verifique se a memória já existe no session_state
+    if memory_key not in st.session_state:
+        st.session_state[memory_key] = ConversationBufferMemory(
+            return_messages=True,
+            memory_key="chat_history",
+            input_key="question",
+            output_key="answer",
+        )
+    memory = st.session_state[memory_key]
+
     retriever = vector_store.as_retriever(search_type="similarity", k=k_similarity)
     prompt = PromptTemplate.from_template(template=PROMPT)
+
     chat_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         memory=memory,
@@ -118,21 +134,17 @@ def cria_chain_conversa():
         combine_docs_chain_kwargs={"prompt": prompt},
     )
 
-    print("Chat chain: ", chat_chain)
-
-    st.session_state["chain"] = chat_chain
+    st.session_state[chain_key] = chat_chain
 
 
 ###############################################################################################################
-####################### Parametros de modelagem ###############################################################
+####################### Parâmetros de modelagem ###############################################################
 k_similarity = 10  # lang_chain similarity search
 
-# Tente utilizar tamanhos de chunk_sizes = [128, 256, 512, 1024, 2048]
-# https://www.llamaindex.ai/blog/evaluating-the-ideal-chunk-size-for-a-rag-system-using-llamaindex-6207e5d3fec5
+# Tamanhos de chunk_size recomendados
 pdf_chunk = 2048
 
-# https://learn.microsoft.com/en-us/answers/questions/1551865/how-do-you-set-document-chunk-length-and-overlap-w
-# Recomendado 10%
+# Sobreposição recomendada de 10%
 pdf_overlap = 205
 ##############################################################################################################
 
@@ -140,7 +152,7 @@ pdf_overlap = 205
 # UX
 ################################################################################################################################
 
-# Inicio da aplicação
+# Início da aplicação
 st.set_page_config(
     page_title="Investors",
     page_icon=":black_medium_square:",
@@ -148,7 +160,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Leitura do arquivo css de estilização
+# Leitura do arquivo CSS de estilização
 with open("./styles.css") as f:
     st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
@@ -156,65 +168,36 @@ with open("./styles.css") as f:
 ################################################################################################################################
 # UI
 ################################################################################################################################
-# Inicio da aplicação
 def main():
     st.subheader("Investors", divider=True)
-    tab1, tab2 = st.tabs(["Assistente Investor", "Perguntas isolados"])
-    # ----------------------------------------------------------------------------------------------
-    with tab1:
-        if not "chain" in st.session_state:
-            cria_chain_conversa()
+    chain_key = "chain_investors"
+    memory_key = "memory_investors"
 
-        chain = st.session_state["chain"]
-        memory = chain.memory
+    if chain_key not in st.session_state:
+        cria_chain_conversa()
 
-        mensagens = memory.load_memory_variables({})["chat_history"]
+    chain = st.session_state[chain_key]
+    memory = st.session_state[memory_key]
 
-        # Container para exibição no estilo Chat message
-        container = st.container()
-        for mensagem in mensagens:
-            chat = container.chat_message(mensagem.type)
-            chat.markdown(mensagem.content)
+    mensagens = memory.load_memory_variables({})["chat_history"]
 
-        # Espaço para o usuário incluir a mensagem e estruturação da conversa
-        nova_mensagem = st.chat_input("Digite uma mensagem")
-        if nova_mensagem:
-            chat = container.chat_message("human")
-            chat.markdown(nova_mensagem)
-            chat = container.chat_message("ai")
-            chat.markdown("Gerando resposta...")
+    # Container para exibição no estilo Chat message
+    container = st.container()
+    for mensagem in mensagens:
+        chat = container.chat_message(mensagem.type)
+        chat.markdown(mensagem.content)
 
-            resposta = chain.invoke({"question": nova_mensagem})
-            st.session_state["ultima_resposta"] = resposta
-            st.rerun()
+    # Espaço para o usuário incluir a mensagem e estruturação da conversa
+    nova_mensagem = st.chat_input("Digite uma mensagem")
+    if nova_mensagem:
+        chat = container.chat_message("human")
+        chat.markdown(nova_mensagem)
+        chat = container.chat_message("ai")
+        chat.markdown("Gerando resposta...")
 
-    # ----------------------------------------------------------------------------------------------
-    # Tab 2 para perguntas adicionais
-    with tab2:
-
-        def clear_text():
-            st.session_state.query_add = st.session_state.widget
-            st.session_state.widget = ""
-
-        st.write("")
-
-        st.text_input("**Digite aqui a sua pergunta**", key="widget")
-        query_add = st.session_state.get("query_add", "")
-        with st.form(key="myform1"):
-            submit_button = st.form_submit_button(label="Enviar", on_click=clear_text)
-
-            if submit_button:
-                with st.spinner("Processando..."):
-                    isolated_qa = RetrievalQA.from_chain_type(
-                        llm=llm,
-                        retriever=vector_store.as_retriever(
-                            search_type="similarity", k=k_similarity
-                        ),
-                        return_source_documents=True,
-                    )
-
-                    resposta = isolated_qa.invoke(input={"query": query_add})
-                    st.markdown(f"**{query_add}**" + "  \n " + resposta["result"])
+        resposta = chain.invoke({"question": nova_mensagem})
+        st.session_state["ultima_resposta"] = resposta
+        st.rerun()
 
 
 if __name__ == "__main__":
