@@ -169,7 +169,6 @@ with open("./styles.css") as f:
 # UI
 ################################################################################################################################
 def main():
-    st.subheader("Investors", divider=True)
     chain_key = "chain_investors"
     memory_key = "memory_investors"
 
