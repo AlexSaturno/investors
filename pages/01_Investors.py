@@ -84,6 +84,7 @@ llm = AzureChatOpenAI(
     openai_api_type="azure",
 )
 
+# INVESTORS_AZURESEARCH_INDEX_NAME = "vector-1727123085165"
 vector_store: AzureSearch = AzureSearch(
     azure_search_endpoint=vectorstore_address,
     azure_search_key=vectorstore_key,
